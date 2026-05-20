@@ -192,13 +192,12 @@ Headers expostos: `x-request-id`. Headers aceitos: `Authorization`, `Content-Typ
 
 - **Single-table**: os padrões de acesso dirigem o schema; separar por entidade aumentaria custo e complexidade de consistência.
 - **FSM em duas camadas**: service faz fast-fail de regra inválida e DB protege race condition no update.
-- **Auth com IdP stub deliberado**: login valida contra `DEMO_PASSWORD` env; o resto do pipeline JWT (guard, strategy, expiração) é real. Sem `users-table`/`bcrypt` por escopo — em prod entra IdP externo.
-- **nestjs-pino com `genReqId`**: request id nativo, propagação de `x-request-id` e menos código customizado.
+- **Auth com IdP stub deliberado**: login valida contra `DEMO_PASSWORD` env; o resto do pipeline JWT (guard, strategy, expiração) é real.
 - **Worker Nest separado**: deploy, restart e escala independentes da API.
 - **Kafka em KRaft**: stack mais simples localmente e alinhada ao caminho atual do ecossistema Kafka.
 - **Producer idempotente com `key=messageId`**: melhora resiliência de publish e preserva ordenação por mensagem (por partition/key).
-- **Rate-limit no login**: defesa contra brute-force no stub de auth;
-- **CORS por env**: app está preparada para front-end em outro domínio sem alterar código.
+- **Rate-limit no login**: defesa;
+- **CORS por env**: preparado para front-end em outro domínio sem alterar código.
 
 ## Estrutura do projeto
 
