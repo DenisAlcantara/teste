@@ -1,0 +1,538 @@
+{
+  "info": {
+    "_postman_id": "f1b01bff-bc84-43df-a95c-4b35049ea5d5",
+    "name": "Messages",
+    "description": "Coleção de exemplos para a API de Mensagens (NestJS + DynamoDB + Kafka).\n\nFluxo recomendado:\n1. Auth → Login (popula {{accessToken}})\n2. Messages → Create (popula {{messageId}}). Header `Idempotency-Key` sempre presente — UUID novo a cada execução via `{{$guid}}`. Para testar dedup, fixe o valor manualmente e re-execute.\n3. Demais requests usam as variáveis automaticamente.\n\nVariáveis de ambiente:\n- baseUrl (default http://localhost:3000)\n- accessToken (preenchido pelo Login)\n- messageId (preenchido pelo Create)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "26012105"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (stub)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "pm.test('accessToken recebido', () => pm.expect(body.accessToken).to.be.a('string'));",
+                  "pm.test('expiresIn numérico', () => pm.expect(body.expiresIn).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"demo\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "POST /messages (idempotente)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Gera UUID e guarda em `currentIdempotencyKey` pra reuso manual em retries.",
+                  "// Para testar dedup: fixe o valor da variável `currentIdempotencyKey` e re-execute — id retornado deve ser o mesmo.",
+                  "if (!pm.collectionVariables.get('currentIdempotencyKey')) {",
+                  "  pm.collectionVariables.set('currentIdempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "const previousId = pm.collectionVariables.get('messageId');",
+                  "pm.collectionVariables.set('messageId', body.id);",
+                  "pm.test('status inicial = enviado', () => pm.expect(body.status).to.eql('enviado'));",
+                  "if (previousId) {",
+                  "  pm.test('mesma Idempotency-Key → mesmo id (dedup)', () => pm.expect(body.id).to.eql(previousId));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{currentIdempotencyKey}}",
+                "description": "UUID gerado no pre-request. Reutilizado em retries enquanto a variável não for limpa. Para forçar nova key, apague `currentIdempotencyKey` nas Collection Variables."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Olá, mensagem de teste\",\n  \"sender\": \"alice\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "/messages/:id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('id bate', () => pm.expect(body.id).to.eql(pm.collectionVariables.get('messageId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/messages/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "{{messageId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "/messages?sender=",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('items é array', () => pm.expect(body.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/messages?sender=alice&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "sender",
+                  "value": "alice"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "/messages?startDate=&endDate=",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('items é array', () => pm.expect(body.items).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/messages?startDate=2026-05-01T00:00:00.000Z&endDate=2026-05-31T23:59:59.999Z&limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2026-05-01T00:00:00.000Z"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-05-31T23:59:59.999Z"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "/messages/:id/status (enviado → recebido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('status = recebido', () => pm.expect(body.status).to.eql('recebido'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"recebido\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/messages/{{messageId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "{{messageId}}",
+                "status"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "/messages/:id/status (recebido → lido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('status = lido', () => pm.expect(body.status).to.eql('lido'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"lido\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/messages/{{messageId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "{{messageId}}",
+                "status"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Casos de erro (FSM, validação, auth)",
+      "item": [
+        {
+          "name": "401 — sem token em /messages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"sem auth\",\n  \"sender\": \"alice\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "409 — FSM rejeita enviado → lido (pula recebido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict (transição inválida)', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"lido\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/messages/{{messageId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "{{messageId}}",
+                "status"
+              ]
+            },
+            "description": "Crie uma mensagem nova antes deste request (status inicial = enviado). PATCH direto pra lido deve falhar com 409."
+          },
+          "response": []
+        },
+        {
+          "name": "/messages sem sender nem date-range",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "/messages com sender E date-range juntos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/messages?sender=alice&startDate=2026-05-01T00:00:00.000Z&endDate=2026-05-31T00:00:00.000Z",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "sender",
+                  "value": "alice"
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-05-01T00:00:00.000Z"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-05-31T00:00:00.000Z"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "/messages/:id inexistente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/messages/11111111-1111-4111-8111-111111111111",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "messages",
+                "11111111-1111-4111-8111-111111111111"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "messageId",
+      "value": ""
+    },
+    {
+      "key": "currentIdempotencyKey",
+      "value": "",
+      "description": "Idempotency-Key da última execução de POST /messages. Apague pra forçar nova key."
+    }
+  ]
+}
